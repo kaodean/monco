@@ -32,7 +32,7 @@ uv sync
 
 ```bash
 # Copy template and configure
-cp src/.env.template src/.env
+cp .env.template .env
 # Edit src/.env with your tokens
 ```
 
@@ -67,11 +67,6 @@ python main.py
 | `/status` | Check session info and workspace usage |
 | `/cleanup` | Free up workspace space |
 | `/reset` | Create new session |
-
-## Documentation
-
-- [Quick Start Guide](QUICK_START_GUIDE.md) - Detailed usage guide
-- [Deployment Checklist](DEPLOYMENT_CHECKLIST.md) - Production deployment guide
 
 ## License
 
