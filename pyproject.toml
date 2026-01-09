@@ -1,0 +1,15 @@
+[project]
+name = "monco"
+version = "0.1.0"
+description = "Discord Bot powered by Claude Agent SDK with workspace management"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "claude-agent-sdk>=0.1.18",
+    "discord-py>=2.6.4",
+    "python-dotenv>=1.2.1",
+]
+
+[tool.uv.sources]
+monco = { path = "src/" }
+
