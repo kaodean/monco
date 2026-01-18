@@ -46,7 +46,6 @@ MAX_WORKSPACE_SIZE_MB = int(os.getenv("MAX_WORKSPACE_SIZE_MB", "50"))
 SESSION_EXPIRY_HOURS = int(os.getenv("SESSION_EXPIRY_HOURS", "24"))
 CLEANUP_INTERVAL_HOURS = int(os.getenv("CLEANUP_INTERVAL_HOURS", "1"))
 
-
 # -----------------------------
 # Discord Configuration
 # -----------------------------
@@ -166,7 +165,7 @@ class UserSession:
                     total_size += file_path.stat().st_size
         except Exception as e:
             logger.warning(f"[!] Error calculating workspace size: {e}")
-        return total_size / (1024 * 1024)  # Convert to MB
+        return total_size / (1024 * 1024)  # Conㄙt to MB
     
     def check_workspace_size_limit(self) -> tuple[bool, float]:
         """Check if workspace size is within limit"""
@@ -272,7 +271,8 @@ async def execute_with_session(
     Returns:
         Dict containing execution results
     """
-    output_lines = []
+    output_lines = []  # For user-facing output
+    claude_responses = []  # Store only Claude's text responses
     tools_used = []
     errors = []
     metadata = {
@@ -306,18 +306,18 @@ async def execute_with_session(
                 "errors": errors,
             }
         
+        # Log detailed information
         if verbose:
-            output_lines.append("=" * 60)
-            output_lines.append(f"Monco (claude-code) Execution Started")
-            output_lines.append(f"Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-            output_lines.append(f"Session UUID: {session.session_uuid}")
-            output_lines.append(f"Task: {prompt[:80]}{'...' if len(prompt) > 80 else ''}")
-            output_lines.append(f"Workspace: {session.workspace_path}")
-            output_lines.append(f"Workspace Size: {size_mb:.1f}MB / {MAX_WORKSPACE_SIZE_MB}MB")
-            output_lines.append("=" * 60)
-            output_lines.append("")
+            logger.info("=" * 60)
+            logger.info(f"Monco (claude-code) Execution Started")
+            logger.info(f"Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+            logger.info(f"Session UUID: {session.session_uuid}")
+            logger.info(f"Task: {prompt[:80]}{'...' if len(prompt) > 80 else ''}")
+            logger.info(f"Workspace: {session.workspace_path}")
+            logger.info(f"Workspace Size: {size_mb:.1f}MB / {MAX_WORKSPACE_SIZE_MB}MB")
+            logger.info("=" * 60)
         
-        # 發送 prompt 到 client
+        # Send prompt to Claude agent
         await session.client.query(prompt)
         
         # Receive all messages
@@ -325,7 +325,7 @@ async def execute_with_session(
             # Handle System Messages
             if isinstance(message, SystemMessage):
                 if verbose and message.subtype != "init":
-                    output_lines.append(f"System: {message.subtype}")
+                    logger.info(f"System: {message.subtype}")
             
             # Handle Assistant Messages
             elif isinstance(message, AssistantMessage):
@@ -333,9 +333,10 @@ async def execute_with_session(
                     # Text content
                     if isinstance(block, TextBlock):
                         text = block.text.strip()
-                        if text and verbose:
-                            output_lines.append(f"Claude: {text}")
-                            output_lines.append("")
+                        if text:
+                            claude_responses.append(text)  # Store for user output
+                            if verbose:
+                                logger.info(f"Claude: {text}")
                     
                     # Tool usage
                     elif isinstance(block, ToolUseBlock):
@@ -348,39 +349,35 @@ async def execute_with_session(
                         })
                         
                         if verbose:
-                            output_lines.append("")
-                            output_lines.append("─" * 40)
-                            output_lines.append(f"[*] TOOL: {tool_name}")
+                            logger.info("─" * 40)
+                            logger.info(f"[*] TOOL: {tool_name}")
                             
                             # Show relevant input details
                             if tool_name == "Bash":
                                 cmd = tool_input.get("command", "")
-                                output_lines.append(f"    └─> Command: {cmd[:100]}{'...' if len(cmd) > 100 else ''}")
+                                logger.info(f"    └─> Command: {cmd[:100]}{'...' if len(cmd) > 100 else ''}")
                             elif tool_name in ["Read", "Write", "Edit"]:
                                 file_path = tool_input.get("file_path", "")
-                                output_lines.append(f"    └─> File: {file_path}")
+                                logger.info(f"    └─> File: {file_path}")
                             elif tool_name == "WebSearch":
                                 query_text = tool_input.get("query", "")
-                                output_lines.append(f"    └─> Search: {query_text}")
+                                logger.info(f"    └─> Search: {query_text}")
                             elif tool_name == "WebFetch":
                                 url = tool_input.get("url", "")
-                                output_lines.append(f"    └─> URL: {url}")
+                                logger.info(f"    └─> URL: {url}")
                             elif tool_name == "Task":
                                 subagent = tool_input.get("subagent_type", "")
                                 description = tool_input.get("description", "")
-                                output_lines.append(f"    └─> Subagent: {subagent}")
-                                output_lines.append(f"    └─> Description: {description}")
-                            
-                            output_lines.append("")
+                                logger.info(f"    └─> Subagent: {subagent}")
+                                logger.info(f"    └─> Description: {description}")
                     
                     # Tool results
                     elif isinstance(block, ToolResultBlock):
                         if verbose and hasattr(block, "content") and block.content:
                             if isinstance(block.content, str):
                                 result_preview = block.content[:150]
-                                output_lines.append(f"    [+] Result: {result_preview}{'...' if len(block.content) > 150 else ''}")
-                            output_lines.append("─" * 40)
-                            output_lines.append("")
+                                logger.info(f"    [+] Result: {result_preview}{'...' if len(block.content) > 150 else ''}")
+                            logger.info("─" * 40)
             
             # Handle Result Messages
             elif isinstance(message, ResultMessage):
@@ -394,28 +391,35 @@ async def execute_with_session(
                 if message.total_cost_usd:
                     session.total_cost_usd += message.total_cost_usd
                 
+                # Log detailed statistics
                 if verbose:
-                    output_lines.append("=" * 60)
-                    output_lines.append(f"{'+' if not message.is_error else '-'} Execution Completed: {message.subtype}")
-                    output_lines.append("")
-                    output_lines.append("Execution Statistics:")
-                    output_lines.append(f"   Conversation Turns: {message.num_turns}")
-                    output_lines.append(f"   Total Execution Time: {message.duration_ms/1000:.2f} sec")
-                    output_lines.append(f"   API Time: {message.duration_api_ms/1000:.2f} sec")
+                    logger.info("=" * 60)
+                    logger.info(f"{'+' if not message.is_error else '-'} Execution Completed: {message.subtype}")
+                    logger.info("")
+                    logger.info("Execution Statistics:")
+                    logger.info(f"   Conversation Turns: {message.num_turns}")
+                    logger.info(f"   Total Execution Time: {message.duration_ms/1000:.2f} sec")
+                    logger.info(f"   API Time: {message.duration_api_ms/1000:.2f} sec")
                     if message.total_cost_usd:
-                        output_lines.append(f"   Total Cost: ${message.total_cost_usd:.4f} USD")
-                    output_lines.append(f"   Tools Used: {len(tools_used)}")
+                        logger.info(f"   Total Cost: ${message.total_cost_usd:.4f} USD")
+                    logger.info(f"   Tools Used: {len(tools_used)}")
                     
                     if tools_used:
                         tool_counts = {}
                         for tool in tools_used:
                             tool_name = tool["name"]
                             tool_counts[tool_name] = tool_counts.get(tool_name, 0) + 1
-                        output_lines.append(f"   Tool Usage Details:")
+                        logger.info(f"   Tool Usage Details:")
                         for tool_name, count in sorted(tool_counts.items()):
-                            output_lines.append(f"     - {tool_name}: {count} times")
+                            logger.info(f"     - {tool_name}: {count} times")
                     
-                    output_lines.append("=" * 60)
+                    logger.info("=" * 60)
+                
+                # Prepare user-facing output (only Claude's responses)
+                if claude_responses:
+                    output_lines.extend(claude_responses)
+                else:
+                    output_lines.append("[No response from Claude]")
                 
                 metadata["end_time"] = datetime.now().isoformat()
                 metadata["status"] = "error" if message.is_error else "success"
@@ -436,8 +440,8 @@ async def execute_with_session(
             "message": str(e)
         })
         success = False
-        output_lines.append("")
-        output_lines.append(f"[!] Error occurred: {str(e)}")
+        logger.error(f"[!] Error occurred: {str(e)}")
+        output_lines.append(f"Error: {str(e)}")
         metadata["end_time"] = datetime.now().isoformat()
         metadata["status"] = "exception"
     
@@ -541,7 +545,7 @@ async def run(interaction: discord.Interaction, prompt: str):
     logger.info(f"[*] Guild: {interaction.guild.name if interaction.guild else 'DM'}")
     
     # Respond to Discord first to avoid timeout
-    await interaction.response.send_message(f"Executing task: {prompt[:100]}...")
+    await interaction.response.send_message(f"🫡 We'll get started on your task shortly...\n**Task:** {prompt[:100]}...")
     
     try:
         # Get or create user session
@@ -553,17 +557,21 @@ async def run(interaction: discord.Interaction, prompt: str):
         # Get output content
         output_text = result["output"]
         success = result["success"]
+        metadata = result["metadata"]
+        
+        # Format simple response for user
+        if success:
+            response = output_text
+        else:
+            response = f"We encountered some issues while doing your task:\n{output_text}"
         
         # Send results in chunks (Discord has 2000 character limit)
-        if len(output_text) > 1900:
-            chunks = [output_text[i:i+1900] for i in range(0, len(output_text), 1900)]
-            for i, chunk in enumerate(chunks):
-                if i == 0:
-                    await interaction.followup.send(f"[{'DONE' if success else 'FAIL'}] Execution completed:\n```\n{chunk}\n```")
-                else:
-                    await interaction.followup.send(f"```\n{chunk}\n```")
+        if len(response) > 1900:
+            chunks = [response[i:i+1900] for i in range(0, len(response), 1900)]
+            for chunk in chunks:
+                await interaction.followup.send(chunk)
         else:
-            await interaction.followup.send(f"[{'DONE' if success else 'FAIL'}] Execution completed:\n```\n{output_text}\n```")
+            await interaction.followup.send(response)
         
         logger.info(f"[+] /run command completed successfully" if success else f"[-] /run command failed")
         logger.info("=" * 60)
@@ -579,93 +587,205 @@ async def run(interaction: discord.Interaction, prompt: str):
 # -----------------------------
 @bot.tree.command(name="code", description="Let Monco generate a code project in your workspace")
 @app_commands.describe(
-    prompt="Project description (e.g., Create a Flask API project)"
+    prompt="Project description (e.g., Create a Flask API project)",
+    max_iterations="Maximum iterations for project generation (default: 50)"
 )
 async def code(
     interaction: discord.Interaction, 
     prompt: str,
     max_iterations: int = 50
 ):
+    import re
+    
     logger.info("=" * 60)
     logger.info(f"[*] Received command: /code prompt=\"{prompt}\" max_iterations={max_iterations}")
     logger.info(f"[*] User: {interaction.user} (ID: {interaction.user.id})")
     logger.info(f"[*] Guild: {interaction.guild.name if interaction.guild else 'DM'}")
     
-    await interaction.response.send_message(f"Generating project: {prompt[:100]}...")
+    await interaction.response.send_message(f"🫡 We'll get started on your task shortly...\n**Task:** {prompt[:100]}...")
+    
+    # Helper function to send progress updates
+    async def send_progress_update(message: str):
+        try:
+            await interaction.followup.send(message)
+        except discord.errors.HTTPException as e:
+            logger.warning(f"[!] Failed to send progress update: {e}")
     
     try:
         # Get or create user session
         session = await get_or_create_session(interaction.user.id)
         
-        # === Round 1: Generate project ===
-        logger.info("[*] Round 1: Generating project...")
-        full_prompt = f"""
-            /kaodean-plugin:ralph-loop \"{prompt}\" --completion-promise \"DONE!!!\" --max-iterations {max_iterations}
-        """
+        # ============================================
+        # Phase 1: Generate Project
+        # ============================================
+        logger.info("[*] Phase 1: Generating project...")
         
-        result = await execute_with_session(session, full_prompt, verbose=False)
+        generation_prompt = f"""
+/kaodean-plugin:ralph-loop \"{prompt}\" --completion-promise \"DONE!!!\" --max-iterations {max_iterations}
+"""
         
-        success = result["success"]
+        # Execute generation with progress tracking
+        logger.info("[*] Starting project generation...")
+        execution_task = asyncio.create_task(
+            execute_with_session(session, generation_prompt, verbose=True)
+        )
         
-        if not success:
-            logger.warning("[-] /code Round 1 failed, skipping GitHub upload")
+        # Progress update loop (every 5 minutes)
+        start_time = asyncio.get_event_loop().time()
+        update_interval = 300  # 5 minutes
+        last_update = start_time
+        
+        while not execution_task.done():
+            await asyncio.sleep(10)  # Check every 10 seconds
+            current_time = asyncio.get_event_loop().time()
+            
+            if current_time - last_update >= update_interval:
+                elapsed_minutes = int((current_time - start_time) / 60)
+                await send_progress_update(f"😴 We're still working on it... ({elapsed_minutes} minutes elapsed)")
+                last_update = current_time
+        
+        # Check generation result
+        generation_result = await execution_task
+        
+        if not generation_result["success"]:
+            await send_progress_update("😔 We did our best.. but we can't complete this task.")
+            logger.warning("[-] Phase 1 failed: Project generation unsuccessful")
             logger.info("=" * 60)
             return
         
-        logger.info("[+] /code Round 1 completed successfully")
+        logger.info("[+] Phase 1 completed: Project generated successfully")
         
-        # === Round 2: Upload to GitHub ===
-        logger.info("[*] Round 2: Uploading to GitHub...")
-        await interaction.followup.send("📤 Uploading project to GitHub...")
+        # ============================================
+        # Phase 2: Get Project Name
+        # ============================================
+        logger.info("[*] Phase 2: Identifying project name...")
         
-        # Generate safe repo name using UUID
-        repo_name = f"project-{session.session_uuid[:8]}"
+        project_name_prompt = """What is the name of the project you just created? 
+
+IMPORTANT: 
+1. Respond with ONLY the project name in English
+2. Use lowercase letters, numbers, hyphens only
+3. No spaces, no special characters
+4. Format: my-project-name
+5. Do not include any explanation or additional text
+
+Project name:"""
+        
+        project_name_result = await execute_with_session(session, project_name_prompt, verbose=True)
+        
+        # Extract project name from response
+        project_name_raw = project_name_result.get("output", "").strip()
+        logger.info(f"[*] Raw project name response: {project_name_raw}")
+        
+        # Clean up the response - extract only valid project name
+        # Remove markdown, quotes, and extra text
+        project_name = re.sub(r'[`"\'\*]', '', project_name_raw)
+        # Extract first valid line that looks like a project name
+        lines = [line.strip() for line in project_name.split('\n') if line.strip()]
+        project_name = lines[0] if lines else ""
+        
+        # Remove common prefixes
+        project_name = re.sub(r'^(project name:|name:|the project is called:?|project:?)\s*', '', project_name, flags=re.IGNORECASE)
+        project_name = project_name.strip()
+        
+        # Take only first word if multiple words
+        project_name = re.split(r'[\s,;]', project_name)[0]
+        
+        # Ensure GitHub compatible format (lowercase, alphanumeric and hyphens only)
+        project_name = re.sub(r'[^a-zA-Z0-9_-]', '-', project_name.lower())
+        project_name = re.sub(r'-+', '-', project_name).strip('-')
+        
+        # Validate length and format
+        if not project_name or len(project_name) < 3 or not re.match(r'^[a-z0-9][a-z0-9_-]*[a-z0-9]$', project_name):
+            # Fallback to timestamp-based name
+            timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+            project_name = f"project-{timestamp}"
+            logger.warning(f"[!] Invalid project name, using fallback: {project_name}")
+        
+        logger.info(f"[+] Phase 2 completed: Project name identified as '{project_name}'")
+        await send_progress_update(f"📝 We decided to name your project **{project_name}**.")
+        
+        # ============================================
+        # Phase 3: Upload to GitHub
+        # ============================================
+        logger.info("[*] Phase 3: Uploading to GitHub...")
+        await send_progress_update(f"📤 We'll upload this project to github! \n - project name: {project_name}")
         
         github_prompt = f"""
-Please upload this project to GitHub with the following steps:
+    Please upload this project to GitHub. Follow these steps carefully:
 
-1. Check if this is already a git repository by running: git status
-2. If it's NOT a git repo (command fails):
-   - Initialize git repository: git init
-   - Add all files: git add .
-   - Create initial commit: git commit -m "Initial commit: {prompt[:50]}"
-   - Create GitHub repository and push: gh repo create {repo_name} --source=. --public --push
-3. If it IS already a git repo:
-   - Check for remote: git remote -v
-   - If no remote exists, add one: gh repo create {repo_name} --source=. --public --push
-   - If remote exists, just push: git add . && git commit -m "Update: {prompt[:50]}" && git push
+    1. Check git status: git status
+    2. If NOT a git repo (command fails):
+       - Initialize: git init
+       - Add files: git add .
+       - Initial commit: git commit -m "Initial commit: {prompt[:50]}"
+       - Create repo and push: gh repo create {project_name} --source=. --public --push
+    3. If IS a git repo:
+       - Check remote: git remote -v
+       - If no remote: gh repo create {project_name} --source=. --public --push
+       - If remote exists: git add . && git commit -m "Update: {prompt[:50]}" && git push
 
-After successfully uploading, please output the repository URL.
+    CRITICAL: After success, run this command and output the result:
+    git remote get-url origin
 
-Make sure to execute these commands in the project workspace.
-"""
+    Output format:
+    REPO_URL: <the full https://github.com/username/repo-name URL>
+    """
         
-        result_github = await execute_with_session(session, github_prompt, verbose=False)
+        github_result = await execute_with_session(session, github_prompt, verbose=True)
         
-        success_github = result_github["success"]
+        if not github_result["success"]:
+            await send_progress_update("⚠️ Project generated successfully, but GitHub upload failed. Check logs for details.")
+            logger.warning("[-] Phase 3 failed: GitHub upload unsuccessful")
+            logger.info("=" * 60)
+            return
         
-        if success_github:
-            # Try to extract actual repo URL from output
-            output = result_github.get("output", "")
-            repo_url = f"https://github.com/kaodean/{repo_name}"
-            
-            # Look for GitHub URL in output
-            import re
-            url_match = re.search(r'https://github\.com/[^\s\n]+', output)
-            if url_match:
-                repo_url = url_match.group(0)
-            
-            await interaction.followup.send(f"✅ Project successfully uploaded to GitHub!\n🔗 Repository: {repo_url}")
-            logger.info(f"[+] /code Round 2 completed successfully - {repo_url}")
-        else:
-            logger.warning("[-] /code Round 2 failed")
+        # ============================================
+        # Phase 4: Extract Repository URL
+        # ============================================
+        logger.info("[*] Phase 4: Extracting repository URL...")
         
+        output = github_result.get("output", "")
+        repo_url = None
+        
+        # Try to find REPO_URL: marker
+        repo_url_match = re.search(r'REPO_URL:\s*(https://github\.com/[^\s\n]+)', output, re.IGNORECASE)
+        if repo_url_match:
+            repo_url = repo_url_match.group(1).rstrip('/')
+            logger.info(f"[+] Found repo URL via marker: {repo_url}")
+        
+        # Fallback: Search for any GitHub URL
+        if not repo_url:
+                url_match = re.search(r'https://github\.com/([a-zA-Z0-9_-]+)/([a-zA-Z0-9_-]+?)(?:\.git)?(?:\s|$|/)', output)
+                if url_match:
+                    username = url_match.group(1)
+                    reponame = url_match.group(2)
+                    repo_url = f"https://github.com/{username}/{reponame}"
+                    logger.info(f"[+] Found repo URL via pattern: {repo_url}")
+        if not repo_url:
+            await send_progress_update("⚠️ Project uploaded to GitHub, but we couldn't retrieve the repository URL. Please check manually.")
+            logger.warning("[-] Phase 4 failed: Could not extract repository URL")
+            logger.info("=" * 60)
+            return
+        # ============================================
+        await send_progress_update(
+            f"✅ **Project successfully uploaded to GitHub!**\n"
+            f"🔗 Repository: {repo_url}\n"
+            f"📦 Project: **{project_name}**"
+        )
+        
+        logger.info(f"[+] Phase 4 completed: Repository URL extracted")
+        logger.info(f"[+] All phases completed successfully!")
+        logger.info(f"[+] Repository: {repo_url}")
         logger.info("=" * 60)
     
     except Exception as e:
         logger.error(f"[!] /code command error: {str(e)}", exc_info=True)
         logger.info("=" * 60)
-        await interaction.followup.send(f"[ERROR] Generation failed: {str(e)}")
+        try:
+            await interaction.followup.send(f"❌ **Error:** Generation failed\n```{str(e)}```")
+        except discord.errors.HTTPException:
+            logger.error("[!] Failed to send error message - interaction token expired")
 
 
 # -----------------------------
@@ -678,7 +798,7 @@ async def reset(interaction: discord.Interaction):
     logger.info(f"[*] User: {interaction.user} (ID: {interaction.user.id})")
     logger.info(f"[*] Guild: {interaction.guild.name if interaction.guild else 'DM'}")
     
-    await interaction.response.send_message("Resetting your session...")
+    await interaction.response.send_message("🫡 We're resetting our office...")
     
     try:
         user_id = interaction.user.id
@@ -801,7 +921,7 @@ async def cleanup(interaction: discord.Interaction, delete_all: bool = False):
     logger.info(f"[*] Received command: /cleanup delete_all={delete_all}")
     logger.info(f"[*] User: {interaction.user} (ID: {interaction.user.id})")
     
-    await interaction.response.send_message("Cleaning up workspace...")
+    await interaction.response.send_message("🧹 We're cleaning up our office...")
     
     try:
         user_id = interaction.user.id
