@@ -1,0 +1,66 @@
+version: '3.8'
+
+services:
+  monco-bot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: monco-discord-bot
+    restart: unless-stopped
+    
+    # Environment variables
+    environment:
+      # Discord Bot Token (set this in .env file or pass directly)
+      - DISCORD_TOKEN=${DISCORD_TOKEN}
+      
+      # Claude API Key (set this in .env file or pass directly)
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      
+      # Optional: Workspace management settings
+      - MAX_WORKSPACE_SIZE_MB=${MAX_WORKSPACE_SIZE_MB:-50}
+      - SESSION_EXPIRY_HOURS=${SESSION_EXPIRY_HOURS:-24}
+      - CLEANUP_INTERVAL_HOURS=${CLEANUP_INTERVAL_HOURS:-1}
+      
+      # Paths
+      - PLUGIN_PATH=/app/claude-code/plugin-template
+      - WORKPLACE_ROOT=/app/workplace
+    
+    # Mount volumes for persistent data
+    volumes:
+      # Persist workplace data
+      - ./workplace:/app/workplace
+      
+      # Optional: Mount .env file if you prefer file-based config
+      - ./.env:/app/.env:ro
+      
+      # Optional: Mount logs directory
+      - ./logs:/app/logs
+    
+    # Resource limits (adjust based on your needs)
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+        reservations:
+          cpus: '0.5'
+          memory: 1G
+    
+    # Logging configuration
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    
+    # Network configuration
+    networks:
+      - monco-network
+
+networks:
+  monco-network:
+    driver: bridge
+
+volumes:
+  workplace-data:
+    driver: local

@@ -10,13 +10,17 @@
 
 ## Usage
 
-### 1. Prerequisites
+Here's the markdown content that fits at `$SELECTION_PLACEHOLDER$`:
+
+```markdown
 
 - Python 3.10+
 - Discord Bot Token
 - Anthropic API Key (optional, if not using default)
 
 ### 2. Installation
+
+- Use Linux or WSL (recommended)
 
 ```bash
 # Clone the repository
@@ -25,8 +29,21 @@ cd monco
 
 # Install dependencies with uv (recommended)
 uv sync
+```
+or use docker
+
+#### docker
+
+1. install docker
+
+2. run with docker
 
 ```
+docker-cmopose up -d
+```
+
+3. auth claude-code in container
+
 
 ### 3. Configuration
 
