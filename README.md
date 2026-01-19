@@ -10,10 +10,6 @@
 
 ## Usage
 
-Here's the markdown content that fits at `$SELECTION_PLACEHOLDER$`:
-
-```markdown
-
 - Python 3.10+
 - Discord Bot Token
 - Anthropic API Key (optional, if not using default)
@@ -38,14 +34,14 @@ or use docker
 
 2. run with docker
 
-```
-docker-cmopose up -d
-```
+    ```
+    docker-cmopose up -d
+    ```
 
 3. auth in container
 
-- [claude-code]()
-- [github (gh)]()
+    - [claude-code]()
+    - [github (gh)]()
 
 ### 3. Configuration
 
