@@ -42,7 +42,7 @@ or use docker
 docker-cmopose up -d
 ```
 
-3. auth claude-code in container
+3. auth claude-code、github (gh) in container
 
 
 ### 3. Configuration
